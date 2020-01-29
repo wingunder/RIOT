@@ -123,35 +123,35 @@ static int _i2c_write_reg(const common_bus_params_t *bus, uint8_t reg, uint8_t d
 
 #endif
 
-void common_bus_setup(common_transport_t* transport)
+void common_bus_setup(common_bus_setup_t* setup)
 {
-    switch (transport->type) {
+    switch (setup->type) {
 #ifdef MODULE_PERIPH_SPI
     case COMMON_BUS_SPI:
-        transport->f.common_bus_init = _spi_init;
-        transport->f.common_bus_acquire = _spi_acquire;
-        transport->f.common_bus_release = _spi_release;
-        transport->f.common_bus_read_reg = _spi_read_reg;
-        transport->f.common_bus_read_regs = _spi_read_regs;
-        transport->f.common_bus_write_reg = _spi_write_reg;
+        setup->f.common_bus_init = _spi_init;
+        setup->f.common_bus_acquire = _spi_acquire;
+        setup->f.common_bus_release = _spi_release;
+        setup->f.common_bus_read_reg = _spi_read_reg;
+        setup->f.common_bus_read_regs = _spi_read_regs;
+        setup->f.common_bus_write_reg = _spi_write_reg;
         break;
 #endif
 #ifdef MODULE_PERIPH_I2C
     case COMMON_BUS_I2C:
-        transport->f.common_bus_init = _i2c_init;
-        transport->f.common_bus_acquire = _i2c_acquire;
-        transport->f.common_bus_release = _i2c_release;
-        transport->f.common_bus_read_reg = _i2c_read_reg;
-        transport->f.common_bus_read_regs = _i2c_read_regs;
-        transport->f.common_bus_write_reg = _i2c_write_reg;
+        setup->f.common_bus_init = _i2c_init;
+        setup->f.common_bus_acquire = _i2c_acquire;
+        setup->f.common_bus_release = _i2c_release;
+        setup->f.common_bus_read_reg = _i2c_read_reg;
+        setup->f.common_bus_read_regs = _i2c_read_regs;
+        setup->f.common_bus_write_reg = _i2c_write_reg;
         break;
 #endif
     default:
-        transport->f.common_bus_init = NULL;
-        transport->f.common_bus_acquire = NULL;
-        transport->f.common_bus_release = NULL;
-        transport->f.common_bus_read_reg = NULL;
-        transport->f.common_bus_read_regs = NULL;
-        transport->f.common_bus_write_reg = NULL;
+        setup->f.common_bus_init = NULL;
+        setup->f.common_bus_acquire = NULL;
+        setup->f.common_bus_release = NULL;
+        setup->f.common_bus_read_reg = NULL;
+        setup->f.common_bus_read_regs = NULL;
+        setup->f.common_bus_write_reg = NULL;
     }
 }

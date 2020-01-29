@@ -43,50 +43,51 @@ extern "C" {
 #endif
 
 /**
+ * @brief   Common bus return codes
+ */
+enum {
+    COMMON_BUS_OK    =  0,  /**< everything was fine */
+    COMMON_BUS_NOBUS = -1,  /**< bus interface error */
+    COMMON_BUS_NODEV = -2,  /**< unable to talk to device */
+} common_bus_return_code_t;
+
+/**
  * @brief   Supported bus types.
  */
 typedef enum {
-    COMMON_BUS_UNDEF = 0,
-    COMMON_BUS_I2C,
-    COMMON_BUS_SPI,
+    COMMON_BUS_UNDEF = 0,   /** Undefined bus type */
+    COMMON_BUS_I2C,         /** I2C bus type */
+    COMMON_BUS_SPI,         /** SPI bus type */
 } common_bus_type_t;
 
 #ifdef MODULE_PERIPH_SPI
 typedef struct  {
-    spi_t dev;
-    gpio_t cs;
-    spi_mode_t mode;
-    spi_clk_t clk;
+    spi_t dev;              /** The device */
+    gpio_t cs;              /** Chip select */
+    spi_mode_t mode;        /** The mode */
+    spi_clk_t clk;          /** Clock speed */
 } spi_bus_t;
 #endif
 
 #ifdef MODULE_PERIPH_I2C
 typedef struct {
-    i2c_t dev;
-    uint8_t addr;
+    i2c_t dev;              /** The device */
+    uint8_t addr;           /** The address */
 } i2c_bus_t;
 #endif
 
 /**
  * @brief   A union of bus parameter types
  */
-
 typedef union
 {
 #ifdef MODULE_PERIPH_SPI
-    spi_bus_t spi;
+    spi_bus_t spi;          /** SPI parameters */
 #endif
 #ifdef MODULE_PERIPH_I2C
-    i2c_bus_t i2c;
+    i2c_bus_t i2c;          /** I2C parameters */
 #endif
-#if !defined(MODULE_PERIPH_I2C) && !defined(MODULE_PERIPH_SPI)
-    /**
-     * @brief   A dummy variable that forces this union
-     *          not to be empty if no I2C or SPI module was
-     *          selected.
-     */
-    int dummy_to_avoid_union_has_no_members_warning;
-#endif
+    unsigned int dev;       /** The device place holder */
 } common_bus_params_t;
 
 /**
@@ -176,25 +177,15 @@ typedef struct {
  */
 typedef struct
 {
-    /**
-     * @brief The bus type
-     */
-    common_bus_type_t type;
-    /**
-     * @brief The bus parameters
-     */
-    common_bus_params_t bus;
-    /**
-     * @brief The bus function pointers
-     */
-    common_bus_function_t f;
-} common_transport_t;
+    common_bus_type_t type;  /** The transport type */
+    common_bus_params_t bus; /** The bus parameters */
+    common_bus_function_t f; /** The function pointers */
+} common_bus_setup_t;
 
 /**
  * @brief   Function that must be called at start-up.
  */
-
-void common_bus_setup(common_transport_t* transport);
+void common_bus_setup(common_bus_setup_t* setup);
 
 #ifdef __cplusplus
 }
