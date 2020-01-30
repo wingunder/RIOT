@@ -76,6 +76,19 @@ typedef struct {
 } i2c_bus_t;
 #endif
 
+typedef enum {
+    COMMON_BUS_REG_CMD_READ = 0,  /** A read command */
+    COMMON_BUS_REG_CMD_WRITE = 1, /** A write command */
+} common_bus_reg_cmd_type_t;
+
+typedef struct {
+    common_bus_reg_cmd_type_t type; /** command type */
+    uint8_t *reg;                  /** register */
+    uint8_t reg_len;               /** register length*/
+    uint8_t *res;                  /** result */
+    uint8_t res_len;               /** result length*/
+} common_bus_reg_cmd_t;
+
 /**
  * @brief   A union of bus parameter types
  */
@@ -91,84 +104,43 @@ typedef union
 } common_bus_params_t;
 
 /**
- * @brief   Bus initialization function prototype
+ * @brief   Bus initialization function typedef
  *
  * @param[in] bus       bus parameters
  */
 typedef int common_bus_init_t(const common_bus_params_t *bus);
 
 /**
- * @brief   Bus acquire function prototype
+ * @brief   Add register command function typedef
+ *
+ * @param[in] bus       bus parameters
+ * @param[in] cmd       command parameters
+ */
+typedef int common_bus_add_reg_cmd_t(const common_bus_params_t *bus,
+                                     const common_bus_reg_cmd_t *cmd);
+
+/**
+ * @brief   Run register commands function typedef
  *
  * @param[in] bus       bus parameters
  */
-typedef int common_bus_acquire_t(const common_bus_params_t *bus);
+typedef int common_bus_run_reg_cmds_t(const common_bus_params_t *bus);
 
 /**
- * @brief   Bus release function prototype
+ * @brief   Clear register command list function typedef
  *
  * @param[in] bus       bus parameters
  */
-typedef void common_bus_release_t(const common_bus_params_t *bus);
-
-/**
- * @brief   Bus read register function prototype
- *
- * @param[in]  bus      bus parameters
- * @param[in]  reg      register
- * @param[out] out      byte, read from register
- */
-typedef int common_bus_read_reg_t(const common_bus_params_t *bus,
-                                 uint16_t reg, uint8_t *out);
-/**
- * @brief   Bus read registers function prototype
- *
- * @param[in]  bus      bus parameters
- * @param[in]  reg      register
- * @param[out] data     data, read from register
- * @param[in]  len      length of returned register contents
- */
-typedef int common_bus_read_regs_t(const common_bus_params_t *bus,
-                                  uint16_t reg, void *data, size_t len);
-
-/**
- * @brief   Bus write register function prototype
- *
- * @param[in] bus       bus parameters
- * @param[in] reg       register
- * @param[in] data      data byte for register
- */
-typedef int common_bus_write_reg_t(const common_bus_params_t *bus,
-                                  uint8_t reg, uint8_t data);
+typedef void common_bus_clear_cmds_t(const common_bus_params_t *bus);
 
 /**
  * @brief   Function pointer structure for pivoting to a specified bus.
  */
 typedef struct {
-    /**
-     * @brief The bus init function pointer
-     */
-    common_bus_init_t *common_bus_init;
-    /**
-     * @brief The bus acquire function pointer
-     */
-    common_bus_acquire_t *common_bus_acquire;
-    /**
-     * @brief The bus release function pointer
-     */
-    common_bus_release_t *common_bus_release;
-    /**
-     * @brief The bus read register function pointer
-     */
-    common_bus_read_reg_t *common_bus_read_reg;
-    /**
-     * @brief The bus read registers function pointer
-     */
-    common_bus_read_regs_t *common_bus_read_regs;
-    /**
-     * @brief The bus write register function pointer
-     */
-    common_bus_write_reg_t *common_bus_write_reg;
+    common_bus_init_t *init;        /** init function */
+    common_bus_add_reg_cmd_t *add;  /** add register command function */
+    common_bus_run_reg_cmds_t *run; /** run register commands function */
+    common_bus_clear_cmds_t *clear; /** clear register commands function */
 } common_bus_function_t;
 
 /**

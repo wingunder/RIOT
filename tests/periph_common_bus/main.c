@@ -25,9 +25,9 @@
 #include <stdlib.h>
 #include <errno.h>
 
-#include "periph_conf.h"
-#include "periph/common_bus.h"
-#include "shell.h"
+#include <periph_conf.h>
+#include <periph/common_bus.h>
+#include <shell.h>
 
 #define INVALID_ARGS    puts("Error: Invalid number of arguments");
 
@@ -38,14 +38,102 @@
 #define ARG_ERROR       (-1)
 
 /* common_bus_buf is global to reduce stack memory consumtion */
-static uint8_t common_bus_buf[BUFSIZE];
+//static uint8_t common_bus_buf[BUFSIZE];
 
-static common_bus_setup_t setups[I2C_NUMOF + SPI_NUMOF];
-static int setup_index;
+#define SETUPS_NUMOF (I2C_NUMOF + SPI_NUMOF)
 
-static inline void _print_bus_type(void)
+/**
+ * @brief   GPIO parameters
+ */
+typedef struct  {
+    uint8_t port;           /** The port number */
+    uint8_t pin;            /** The pin number */
+} setup_gpio_param_t;
+
+/**
+ * @brief   SPI parameters
+ */
+typedef struct  {
+    unsigned int dev;       /** The device number */
+    setup_gpio_param_t cs;  /** Chip select GPIO parameters */
+    spi_mode_t mode;        /** The mode */
+    spi_clk_t clk;          /** Clock speed */
+} setup_spi_param_t;
+
+/**
+ * @brief   I2C parameters
+ */
+typedef struct {
+    unsigned int dev;       /** The device number */
+    uint8_t addr;           /** The address */
+} setup_i2c_param_t;
+
+/**
+ * @brief   A union of bus parameters
+ */
+typedef union
 {
-    switch (setups[setup_index].type) {
+    setup_spi_param_t spi;  /** SPI parameters */
+    setup_i2c_param_t i2c;  /** I2C parameters */
+    unsigned int dev_num;   /** The device number */
+} setup_params_t;
+
+/**
+ * @brief   A bus setup item type
+ */
+typedef union
+{
+    setup_params_t params;  /** The device parameters */
+    common_bus_type_t type; /** The device type */
+} setup_item_t;
+
+static setup_item_t setups[SETUPS_NUMOF];
+
+static size_t setup_index = 0;
+
+static inline void _print_spi_mode(spi_clk_t clk)
+{
+    switch (clk) {
+    case SPI_CLK_100KHZ:
+        printf("clk: SPI_CLK_100KHZ (%d)", clk);
+        break;
+    case SPI_CLK_400KHZ:
+        printf("clk: SPI_CLK_400KHZ (%d)", clk);
+        break;
+    case SPI_CLK_1MHZ:
+        printf("clk: SPI_CLK_1MHZ (%d)", clk);
+        break;
+    case SPI_CLK_5MHZ:
+        printf("clk: SPI_CLK_5MHZ (%d)", clk);
+        break;
+    case SPI_CLK_10MHZ:
+        printf("clk: SPI_CLK_10MHZ (%d)", clk);
+        break;
+    default:
+        break;
+    }
+}
+
+static inline void _print_bus_params(int i)
+{
+    switch (setups[i].type) {
+    case COMMON_BUS_I2C:
+        printf("addr: 0x%02x", setups[i].params.i2c.addr);
+        break;
+    case COMMON_BUS_SPI:
+        printf("cs_port: %d cs_pin: %d mode: %d",
+               setups[i].params.spi.cs.port, setups[i].params.spi.cs.pin,
+               setups[i].params.spi.mode);
+        _print_spi_mode(setups[i].params.spi.clk);
+        break;
+    default:
+        break;
+    }
+}
+
+static inline void _print_bus_type(int i)
+{
+    switch (setups[i].type) {
     case COMMON_BUS_I2C:
         printf("I2C");
         break;
@@ -53,16 +141,43 @@ static inline void _print_bus_type(void)
         printf("SPI");
         break;
     default:
-        printf("NONE");
         break;
     }
 }
 
-static inline void _print_common_bus_read(uint16_t *reg, uint8_t *buf, int len)
+static inline void _print_bus_type_index(int i)
 {
-    printf("Success: ");
-    _print_bus_type();
-    printf("[%i] read %i byte(s) ", setups[setup_index].bus.dev, len);
+    switch (setups[i].type) {
+    case COMMON_BUS_I2C:
+        printf("I2C[%d]", setups[i].params.i2c.dev);
+        break;
+    case COMMON_BUS_SPI:
+        printf("SPI[%d]", setups[i].params.spi.dev);
+        break;
+    default:
+        break;
+    }
+}
+
+static inline void _print_bus(int i)
+{
+    _print_bus_type_index(i);
+    printf(": ");
+    _print_bus_params(i);
+}
+
+static inline void _print_all_buses(void)
+{
+    for (size_t i=0; i<SETUPS_NUMOF; i++) {
+        _print_bus(i);
+        printf("\n");
+    }
+}
+
+static inline void _print_common_bus_read(int i, uint16_t *reg, uint8_t *buf, int len)
+{
+    _print_bus_type_index(i);
+    printf(" read %i byte(s) ", len);
     if (reg != NULL) {
         printf("from reg 0x%02x ", *reg);
     }
@@ -74,6 +189,21 @@ static inline void _print_common_bus_read(uint16_t *reg, uint8_t *buf, int len)
         printf("0x%02x", buf[i]);
     }
     printf("]\n");
+}
+
+static inline void _print_common_bus_status(void)
+{
+    printf("Status: ");
+    for (size_t i=0; i<SETUPS_NUMOF; i++) {
+        _print_bus_type(i);
+        if (i == setup_index) {
+            printf("[%i]", setups[i].params.dev_num);
+        }
+        else {
+            printf("(%i)", setups[i].params.dev_num);
+        }
+    }
+    printf("\n");
 }
 
 static inline int _get_num(const char *str)
@@ -88,7 +218,6 @@ static inline int _get_num(const char *str)
     }
     return (int)val;
 }
-
 
 static int _check_param(int argc, char **argv, int c_min, int c_max, char *use)
 {
@@ -475,6 +604,28 @@ int cmd_set_params(int argc, char **argv)
     return 0;
 }
 
+int cmd_print_common_bus_params(int argc, char **argv)
+{
+    int bus;
+    bus = _check_param(argc, argv, 1, 1, "BUS");
+    if (bus == ARG_ERROR) {
+        return 1;
+    }
+
+    _print_bus(bus);
+    _print_common_bus_status();
+    return 0;
+}
+
+int cmd_print_all_common_bus_params(int argc, char **argv)
+{
+    (void)argv;
+    (void)argc;
+    _print_all_buses();
+    _print_common_bus_status();
+    return 0;
+}
+
 static const shell_command_t shell_commands[] = {
 //    { "acquire", "Get access to the I2C bus", cmd_acquire },
 //    { "release", "Release to the I2C bus", cmd_release },
@@ -490,7 +641,8 @@ static const shell_command_t shell_commands[] = {
     { "get_id", "Get the firmware id", cmd_get_firmware_id },
     { "get_params", "Get the commn bus parameters", cmd_get_params },
     { "set_params", "Set the common bus parameters", cmd_set_params },
-    { NULL, NULL, NULL }
+    { "p_param", "Print common bus parameters", cmd_print_common_bus_params },
+    { "p_params", "Print all common bus parameters", cmd_print_all_common_bus_params },
 };
 
 int main(void)

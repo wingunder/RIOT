@@ -10,24 +10,14 @@
 #define ENABLE_DEBUG        (0)
 #include "debug.h"
 
-#include "periph/common_bus.h"
+#include <periph/common_bus.h>
 
 /* flag to enable address auto incrementation on read or write */
 #define COMMON_BUS_FLAG_AINC (0x40)
 
 #ifdef MODULE_PERIPH_SPI
 
-#include "periph/gpio.h"
-
-static int _spi_init(const common_bus_params_t *bus);
-static int _spi_acquire(const common_bus_params_t *bus);
-static void _spi_release(const common_bus_params_t *bus);
-static int _spi_read_reg(const common_bus_params_t *bus,
-                         uint16_t reg, uint8_t *out);
-static int _spi_read_regs(const common_bus_params_t *bus,
-                          uint16_t reg, void *data, size_t len);
-static int _spi_write_reg(const common_bus_params_t *bus,
-                          uint8_t reg, uint8_t data);
+#include <periph/gpio.h>
 
 /* flag to set when reading from the device */
 #define COMMON_BUS_FLAG_READ (0x80)
@@ -41,52 +31,29 @@ static int _spi_init(const common_bus_params_t *bus)
     return SPI_OK;
 }
 
-static int _spi_acquire(const common_bus_params_t *bus)
+static int _spi_add(const common_bus_params_t *bus,
+                    const common_bus_reg_cmd_t *cmd)
 {
     return spi_acquire(bus->spi.dev, bus->spi.cs, bus->spi.mode, bus->spi.clk);
 }
 
-static void _spi_release(const common_bus_params_t *bus)
+static void _spi_run(const common_bus_params_t *bus)
 {
     spi_release(bus->spi.dev);
-}
-
-static int _spi_read_reg(const common_bus_params_t *bus, uint16_t reg, uint8_t *out)
-{
     spi_transfer_regs(bus->spi.dev, bus->spi.cs,
                       (COMMON_BUS_FLAG_READ | (uint8_t)reg), NULL, out, 1);
     DEBUG("[_spi_read_reg] reg 0x%02x, val 0x%02x\n", reg, *out);
-    return SPI_OK;
-}
-
-static int _spi_read_regs(const common_bus_params_t *bus, uint16_t reg,
-                           void *data, size_t len)
-{
     spi_transfer_regs(bus->spi.dev, bus->spi.cs,
                       (COMMON_BUS_FLAG_READ | COMMON_BUS_FLAG_AINC | (uint8_t)reg), NULL, data, len);
-    return SPI_OK;
 }
 
-static int _spi_write_reg(const common_bus_params_t *bus, uint8_t reg, uint8_t data)
+static void _spi_clear(const common_bus_params_t *bus, uint16_t reg, uint8_t *out)
 {
-    DEBUG("[_spi_write_reg] write: reg 0x%02x, val 0x%02x\n", (int)reg, (int)data);
-    spi_transfer_reg(bus->spi.dev, bus->spi.cs, reg, data);
-    return SPI_OK;
 }
 
 #endif
 
 #ifdef MODULE_PERIPH_I2C
-
-static int _i2c_init(const common_bus_params_t *bus);
-static int _i2c_acquire(const common_bus_params_t *bus);
-static void _i2c_release(const common_bus_params_t *bus);
-static int _i2c_read_reg(const common_bus_params_t *bus,
-                         uint16_t reg, uint8_t *out);
-static int _i2c_read_regs(const common_bus_params_t *bus,
-                          uint16_t reg, void *data, size_t len);
-static int _i2c_write_reg(const common_bus_params_t *bus,
-                          uint8_t reg, uint8_t data);
 
 static int _i2c_init(const common_bus_params_t *bus)
 {
@@ -94,31 +61,26 @@ static int _i2c_init(const common_bus_params_t *bus)
     return 0;
 }
 
-static int _i2c_acquire(const common_bus_params_t *bus)
+static int _i2c_run(const common_bus_params_t *bus)
 {
     return i2c_acquire(bus->i2c.dev);
 }
 
-static void _i2c_release(const common_bus_params_t *bus)
+static void _i2c_add(const common_bus_params_t *bus)
 {
     i2c_release(bus->i2c.dev);
 }
 
-static int _i2c_read_reg(const common_bus_params_t *bus, uint16_t reg, uint8_t *out)
+static int _i2c_run(const common_bus_params_t *bus)
 {
     return i2c_read_reg(bus->i2c.dev, bus->i2c.addr, reg, out, 0);
-}
-
-static int _i2c_read_regs(const common_bus_params_t *bus, uint16_t reg,
-                          void *data, size_t len)
-{
-    return i2c_read_regs(bus->i2c.dev, bus->i2c.addr, (COMMON_BUS_FLAG_AINC | reg), data, len, 0);
-}
-
-static int _i2c_write_reg(const common_bus_params_t *bus, uint8_t reg, uint8_t data)
-{
     DEBUG("[_i2c_write_reg] write: reg 0x%02x, val 0x%02x\n", (int)reg, (int)data);
     return i2c_write_reg(bus->i2c.dev, bus->i2c.addr, reg, data, 0);
+}
+
+static void _i2c_clear(const common_bus_params_t *bus)
+{
+
 }
 
 #endif
@@ -128,30 +90,24 @@ void common_bus_setup(common_bus_setup_t* setup)
     switch (setup->type) {
 #ifdef MODULE_PERIPH_SPI
     case COMMON_BUS_SPI:
-        setup->f.common_bus_init = _spi_init;
-        setup->f.common_bus_acquire = _spi_acquire;
-        setup->f.common_bus_release = _spi_release;
-        setup->f.common_bus_read_reg = _spi_read_reg;
-        setup->f.common_bus_read_regs = _spi_read_regs;
-        setup->f.common_bus_write_reg = _spi_write_reg;
+        setup->f.init = _spi_init;
+        setup->f.add = _spi_acquire;
+        setup->f.run = _spi_release;
+        setup->f.clear = _spi_read_reg;
         break;
 #endif
 #ifdef MODULE_PERIPH_I2C
     case COMMON_BUS_I2C:
-        setup->f.common_bus_init = _i2c_init;
-        setup->f.common_bus_acquire = _i2c_acquire;
-        setup->f.common_bus_release = _i2c_release;
-        setup->f.common_bus_read_reg = _i2c_read_reg;
-        setup->f.common_bus_read_regs = _i2c_read_regs;
-        setup->f.common_bus_write_reg = _i2c_write_reg;
+        setup->f.init = _i2c_init;
+        setup->f.add = _i2c_acquire;
+        setup->f.run = _i2c_release;
+        setup->f.clear = _i2c_read_reg;
         break;
 #endif
     default:
-        setup->f.common_bus_init = NULL;
-        setup->f.common_bus_acquire = NULL;
-        setup->f.common_bus_release = NULL;
-        setup->f.common_bus_read_reg = NULL;
-        setup->f.common_bus_read_regs = NULL;
-        setup->f.common_bus_write_reg = NULL;
+        setup->f.init = NULL;
+        setup->f.add = NULL;
+        setup->f.run = NULL;
+        setup->f.clear = NULL;
     }
 }

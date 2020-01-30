@@ -1,5 +1,7 @@
 APPLICATION ?= tests_$(notdir $(patsubst %/,%,$(CURDIR)))
 
+OPTIONAL_CFLAGS_BLACKLIST += -fdiagnostics-color
+
 ifneq (,$(wildcard $(CURDIR)/tests/.))
   DEFAULT_MODULE += test_utils_interactive_sync
 endif
