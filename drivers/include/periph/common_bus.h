@@ -30,25 +30,37 @@
 #ifndef PERIPH_COMMON_BUS_H
 #define PERIPH_COMMON_BUS_H
 
-#ifdef MODULE_PERIPH_SPI
+//#ifdef MODULE_PERIPH_SPI
 #include "spi.h"
-#endif
+//#endif
 
-#ifdef MODULE_PERIPH_I2C
+//#ifdef MODULE_PERIPH_I2C
 #include "i2c.h"
-#endif
+//#endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /**
+ * @brief   Maximum number of commands available
+ */
+#define COMMON_BUS_CMD_LIST_NUMOF 8
+
+/**
  * @brief   Common bus return codes
  */
-enum {
-    COMMON_BUS_OK    =  0,  /**< everything was fine */
-    COMMON_BUS_NOBUS = -1,  /**< bus interface error */
-    COMMON_BUS_NODEV = -2,  /**< unable to talk to device */
+typedef enum {
+    COMMON_BUS_OK          =  0,  /**< everything was fine */
+    COMMON_BUS_ERR_NODEV       = -1,  /**< unable to talk to device */
+    COMMON_BUS_ERR_SPI_NOCS    = -2,  /**< invalid chip select line specified */
+    COMMON_BUS_ERR_SPI_NOMODE  = -3,  /**< selected mode is not supported */
+    COMMON_BUS_ERR_SPI_NOCLK   = -4,  /**< selected clock value is not supported */
+    COMMON_BUS_ERR_NOBUS       = -10, /**< bus interface error */
+    COMMON_BUS_ERR_UNKNOWN     = -11, /**< unknown error */
+    COMMON_BUS_ERR_CMD_LIST_RANGE = -12 , /**< index to command list is out of range */
+    COMMON_BUS_ERR_ACQUIRE = -13, /**< acquiring the bus failed */
+    COMMON_BUS_ERR_INIT_FAILED = -14,
 } common_bus_return_code_t;
 
 /**
@@ -64,30 +76,19 @@ typedef enum {
 typedef struct  {
     spi_t dev;              /** The device */
     gpio_t cs;              /** Chip select */
+    int8_t cs_port;              /** Chip select */
+    uint8_t cs_pin;              /** Chip select */
     spi_mode_t mode;        /** The mode */
     spi_clk_t clk;          /** Clock speed */
-} spi_bus_t;
+} common_bus_spi_t;
 #endif
 
 #ifdef MODULE_PERIPH_I2C
 typedef struct {
     i2c_t dev;              /** The device */
     uint8_t addr;           /** The address */
-} i2c_bus_t;
+} common_bus_i2c_t;
 #endif
-
-typedef enum {
-    COMMON_BUS_REG_CMD_READ = 0,  /** A read command */
-    COMMON_BUS_REG_CMD_WRITE = 1, /** A write command */
-} common_bus_reg_cmd_type_t;
-
-typedef struct {
-    common_bus_reg_cmd_type_t type; /** command type */
-    uint8_t *reg;                  /** register */
-    uint8_t reg_len;               /** register length*/
-    uint8_t *res;                  /** result */
-    uint8_t res_len;               /** result length*/
-} common_bus_reg_cmd_t;
 
 /**
  * @brief   A union of bus parameter types
@@ -95,56 +96,43 @@ typedef struct {
 typedef union
 {
 #ifdef MODULE_PERIPH_SPI
-    spi_bus_t spi;          /** SPI parameters */
+    common_bus_spi_t spi;          /** SPI parameters */
 #endif
 #ifdef MODULE_PERIPH_I2C
-    i2c_bus_t i2c;          /** I2C parameters */
+    common_bus_i2c_t i2c;          /** I2C parameters */
 #endif
     unsigned int dev;       /** The device place holder */
 } common_bus_params_t;
 
-/**
- * @brief   Bus initialization function typedef
- *
- * @param[in] bus       bus parameters
- */
-typedef int common_bus_init_t(const common_bus_params_t *bus);
-
-/**
- * @brief   Add register command function typedef
- *
- * @param[in] bus       bus parameters
- * @param[in] cmd       command parameters
- */
-typedef int common_bus_add_reg_cmd_t(const common_bus_params_t *bus,
-                                     const common_bus_reg_cmd_t *cmd);
+typedef struct {
+    uint16_t reg;
+    uint8_t  *data;
+    size_t   len;
+    uint16_t flags;
+} common_bus_rw_args_t;
 
 /**
  * @brief   Run register commands function typedef
  *
  * @param[in] bus       bus parameters
  */
-typedef int common_bus_run_reg_cmds_t(const common_bus_params_t *bus);
+typedef uint8_t common_bus_rw_func_t(size_t bus_handle, common_bus_rw_args_t *args);
 
-/**
- * @brief   Clear register command list function typedef
- *
- * @param[in] bus       bus parameters
- */
-typedef void common_bus_clear_cmds_t(const common_bus_params_t *bus);
+typedef int common_bus_run_t(size_t bus_handle);
 
 /**
  * @brief   Function pointer structure for pivoting to a specified bus.
  */
 typedef struct {
-    common_bus_init_t *init;        /** init function */
-    common_bus_add_reg_cmd_t *add;  /** add register command function */
-    common_bus_run_reg_cmds_t *run; /** run register commands function */
-    common_bus_clear_cmds_t *clear; /** clear register commands function */
+    common_bus_rw_func_t *read_regs;
+    common_bus_rw_func_t *write_regs;
+    common_bus_rw_func_t *read_bytes;
+    common_bus_rw_func_t *write_bytes;
+    common_bus_run_t     *run; /** run register commands function */
 } common_bus_function_t;
 
 /**
- * @brief   The transport struct contains the bus type, the bus
+ * @brief   The setup struct contains the bus type, the bus
  *          and the common bus function pointers.
  */
 typedef struct
@@ -157,7 +145,41 @@ typedef struct
 /**
  * @brief   Function that must be called at start-up.
  */
-void common_bus_setup(common_bus_setup_t* setup);
+int common_bus_spi_init(size_t bus_handle, int8_t cs_port, uint8_t cs_pin,
+                        spi_mode_t mode, spi_clk_t clk);
+
+int common_bus_i2c_init(size_t dev_num, int8_t addr);
+
+void common_bus_add_read_regs(size_t bus_handle, uint16_t reg, uint8_t *data,
+                              size_t len, uint16_t flags);
+
+void common_bus_add_read_bytes(size_t bus_handle, uint8_t *data,
+                               size_t len, uint16_t flags);
+
+void common_bus_add_write_regs(size_t bus_handle, uint16_t reg, uint8_t *data,
+                               size_t len, uint16_t flags);
+
+void common_bus_add_write_bytes(size_t bus_handle, uint8_t *data,
+                                size_t len, uint16_t flags);
+
+int common_bus_run(size_t bus_handle);
+
+void common_bus_clear(size_t bus_handle);
+
+#ifdef CONFIG_PERIPH_COMMON_DEBUG
+
+common_bus_type_t common_bus_get_type(size_t bus_handle);
+
+spi_t common_bus_get_spi_dev(size_t bus_handle);
+int8_t common_bus_get_spi_cs_port(size_t bus_handle);
+uint8_t common_bus_get_spi_cs_pin(size_t bus_handle);
+spi_mode_t common_bus_get_spi_mode(size_t bus_handle);
+spi_clk_t common_bus_get_spi_clk(size_t bus_handle);
+
+i2c_t common_bus_get_i2c_dev(size_t bus_handle);
+uint8_t common_bus_get_i2c_addr(size_t bus_handle);
+
+#endif
 
 #ifdef __cplusplus
 }
