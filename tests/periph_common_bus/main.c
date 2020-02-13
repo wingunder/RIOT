@@ -37,7 +37,7 @@
 
 #define ARG_ERROR       (-1)
 
-static inline void _print_spi_mode(spi_clk_t clk)
+static inline void _print_spi_clk(spi_clk_t clk)
 {
     switch (clk) {
     case SPI_CLK_100KHZ:
@@ -60,6 +60,23 @@ static inline void _print_spi_mode(spi_clk_t clk)
     }
 }
 
+static inline void _print_soft_spi_clk(soft_spi_clk_t clk)
+{
+    switch (clk) {
+    case SOFT_SPI_CLK_100KHZ:
+        printf("clk: SPI_CLK_100KHZ (%d)", clk);
+        break;
+    case SOFT_SPI_CLK_400KHZ:
+        printf("clk: SPI_CLK_400KHZ (%d)", clk);
+        break;
+    case SOFT_SPI_CLK_DEFAULT:
+        printf("clk: max possible");
+        break;
+    default:
+        break;
+    }
+}
+
 static inline void _print_bus_params(int i)
 {
     switch (common_bus_get_type(i)) {
@@ -71,7 +88,14 @@ static inline void _print_bus_params(int i)
                common_bus_get_spi_cs_port(i),
                common_bus_get_spi_cs_pin(i),
                common_bus_get_spi_mode(i));
-        _print_spi_mode(common_bus_get_spi_clk(i));
+        _print_spi_clk(common_bus_get_spi_clk(i));
+        break;
+    case COMMON_BUS_SOFT_SPI:
+        printf("cs_port: %d cs_pin: %d mode: %d ",
+               common_bus_get_soft_spi_cs_port(i),
+               common_bus_get_soft_spi_cs_pin(i),
+               common_bus_get_soft_spi_mode(i));
+        _print_spi_clk(common_bus_get_soft_spi_clk(i));
         break;
     default:
         break;
@@ -87,6 +111,9 @@ static inline void _print_bus_type(int i)
     case COMMON_BUS_SPI:
         printf("SPI");
         break;
+    case COMMON_BUS_SOFT_SPI:
+        printf("SOFT_SPI");
+        break;
     default:
         break;
     }
@@ -100,6 +127,9 @@ static inline void _print_bus_type_index(int i)
         break;
     case COMMON_BUS_SPI:
         printf("SPI[%d]", common_bus_get_spi_dev(i));
+        break;
+    case COMMON_BUS_SOFT_SPI:
+        printf("SOFT_SPI[%d]", common_bus_get_soft_spi_dev(i));
         break;
     default:
         break;
@@ -151,17 +181,43 @@ int cmd_print_params(int argc, char **argv)
     return 0;
 }
 
+static int _show_init_usage(char * cmd)
+{
+    printf("Usage (I2C): %s %s\n", cmd, "BUS ADDR");
+    printf("BUS: %d to %d (see 'b' command)\n", COMMON_BUS_I2C_DEV_OFFSET,
+           COMMON_BUS_I2C_DEV_OFFSET + I2C_NUMOF - 1);
+    printf("I2C ADDR: 0 to 255\n");
+    printf("Usage (SPI): %s %s\n", cmd, "BUS CS_PORT CS_PIN MODE CLK");
+    printf("BUS: %d to %d (see 'b' command)\n", COMMON_BUS_SPI_DEV_OFFSET,
+           COMMON_BUS_SPI_DEV_OFFSET + SPI_NUMOF - 1);
+    printf("SPI CS_PORT: chip select port number (-1 for hardware CS)\n");
+    printf("SPI CS_PIN: chip select pin number\n");
+    printf("SPI MODE: 0 to 3\n");
+    printf("SPI CLK: 0 to 3 (0: 100kHz, 1: 400kHz, 2: 1MHz, 3: 5MHz, 4: 10MHz)\n");
+    printf("Usage (SOFT_SPI): %s %s\n", cmd, "BUS CS_PORT CS_PIN MODE CLK");
+    printf("BUS: %d to %d (see 'b' command)\n", COMMON_BUS_SOFT_SPI_DEV_OFFSET,
+           COMMON_BUS_SOFT_SPI_DEV_OFFSET + SOFT_SPI_NUMOF - 1);
+    printf("SOFT_SPI CS_PORT: chip select port number\n");
+    printf("SOFT_SPI CS_PIN: chip select pin number\n");
+    printf("SOFT_SPI MODE: 0 to 3\n");
+    printf("SOFT_SPI CLK: 0 to 2 (0: 100kHz, 1: 400kHz, 2: max_possible)\n");
+    return ARG_ERROR;
+}
+
 int cmd_common_bus_init(int argc, char **argv)
 {
     int ret = 0;
     size_t bus;
-    bool show_usage = false;
+    common_bus_type_t bus_type;
     if (argc > 1) {
         bus = _get_num(argv[1]);
         if (bus >= COMMON_BUS_DEV_NUMOF) {
             printf("BUS out of range!\n");
             cmd_print_params(argc, argv);
-            show_usage = true;
+            return _show_init_usage(argv[0]);
+        }
+        else {
+            bus_type = common_bus_get_type(bus);
         }
     }
     if (argc == 6) {
@@ -170,40 +226,41 @@ int cmd_common_bus_init(int argc, char **argv)
         spi_mode_t mode = _get_num(argv[4]);
         if (mode > SPI_MODE_3) {
             printf("MODE out of range!\n");
-            show_usage = true;
+            return _show_init_usage(argv[0]);
         }
         spi_clk_t clk = _get_num(argv[5]);
         if (clk > SPI_CLK_10MHZ) {
             printf("CLK out of range!\n");
-            show_usage = true;
+            return _show_init_usage(argv[0]);
         }
-        if (!show_usage) {
-            ret = common_bus_spi_init(bus, port, pin, mode, clk);
-            printf("BUS %d is now initialized with port=%d pin=%d mode=%d clk=%d\n", ret, port, pin, mode, clk);
+
+        if (bus_type == COMMON_BUS_SPI) {
+            spi_t dev = common_bus_get_spi_dev(bus);
+            ret = common_bus_spi_init(dev, port, pin, mode, clk);
         }
+        else if (bus_type == COMMON_BUS_SOFT_SPI) {
+            soft_spi_t dev = common_bus_get_soft_spi_dev(bus);
+            ret = common_bus_soft_spi_init(dev, port, pin, mode, clk);
+        }
+        else {
+            printf("ERROR: BUS %d is neither an SPI or a SOFT SPI bus.\n", bus);
+            return _show_init_usage(argv[0]);
+        }
+        printf("BUS %d is now initialized with port=%d pin=%d mode=%d clk=%d\n", ret, port, pin, mode, clk);
     }
     else if (argc == 3) {
         uint8_t addr = _get_num(argv[2]);
-        ret = common_bus_i2c_init(bus, addr);
+        if (bus_type != COMMON_BUS_I2C) {
+            printf("ERROR: BUS %d is not an I2C bus.\n", bus);
+            return _show_init_usage(argv[0]);
+        }
+        i2c_t dev = common_bus_get_i2c_dev(bus);
+        ret = common_bus_i2c_init(dev, addr);
         printf("BUS %d is now initialized with addr 0x%02x\n", ret, addr);
     }
     else {
-        show_usage = true;
-    }
-
-    if (show_usage) {
-        printf("Usage: %s %s\n", argv[0], "BUS ADDR");
-        printf("BUS: 0 to %d (see 'buses' command)\n", COMMON_BUS_DEV_NUMOF-1);
-        printf("I2C ADDR: 0 to 255\n");
-        printf("Usage: %s %s\n", argv[0], "BUS CS_PORT CS_PIN MODE CLK");
-        printf("BUS: 0 to %d (see 'buses' command)\n", COMMON_BUS_DEV_NUMOF-1);
-        printf("SPI CS_PORT: chip select port number\n");
-        printf("SPI CS_PIN: chip select pin number\n");
-        printf("SPI MODE: 0 to 3\n");
-        printf("SPI CLK: 0 to 4 (0: 100kHz, 1: 400kHz, 2: 1MHz, 3: 5MHz, 4: 10MHz)\n");
         printf("ERROR: expected either 3 or 6 params, but %d params were supplied.\n", argc);
-        INVALID_ARGS;
-        return ARG_ERROR;
+        return _show_init_usage(argv[0]);
     }
     cmd_print_params(argc, argv);
     return ret;

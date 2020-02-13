@@ -7,7 +7,7 @@
  * directory for more details.
  */
 
-#define ENABLE_DEBUG        (1)
+#define ENABLE_DEBUG        (0)
 #include "debug.h"
 
 #include "assert.h"
@@ -16,14 +16,14 @@
 #include <errno.h>
 #include <byteorder.h>
 
+/* flag to set when reading from the device */
+#define COMMON_BUS_SPI_FLAG_READ  (0x80)
+
 /* flag to enable address auto incrementation on read or write */
 #define COMMON_BUS_SPI_FLAG_AINC  (0x40)
 #define COMMON_BUS_I2C_FLAG_AINC  (0x80)
 
-#define COMMON_BUS_I2C_DEV_OFFSET 0
-#define COMMON_BUS_SPI_DEV_OFFSET (I2C_NUMOF)
-
-#if defined MODULE_PERIPH_SPI || defined MODULE_PERIPH_I2C
+#if defined MODULE_PERIPH_SPI || defined MODULE_PERIPH_I2C || defined MODULE_SOFT_SPI
 static common_bus_context_t _common_bus_setups[COMMON_BUS_DEV_NUMOF];
 #endif
 
@@ -31,16 +31,13 @@ static common_bus_context_t _common_bus_setups[COMMON_BUS_DEV_NUMOF];
 
 #include <periph/gpio.h>
 
-/* flag to set when reading from the device */
-#define COMMON_BUS_SPI_FLAG_READ  (0x80)
-
 static inline void _spi_check_handle(int bus_handle)
 {
     assert(bus_handle >= (int)COMMON_BUS_SPI_DEV_OFFSET &&
            bus_handle < (int)(COMMON_BUS_SPI_DEV_OFFSET + SPI_NUMOF));
 }
 
-static int _spi_read_regs(common_bus_params_t *ptr, uint16_t reg,
+static int _spi_read_regs(const common_bus_params_t *ptr, uint16_t reg,
                           uint8_t *data, size_t len, uint16_t flags)
 {
     (void)flags;
@@ -53,7 +50,7 @@ static int _spi_read_regs(common_bus_params_t *ptr, uint16_t reg,
     return COMMON_BUS_OK;
 }
 
-static int _spi_read_bytes(common_bus_params_t *ptr,
+static int _spi_read_bytes(const common_bus_params_t *ptr,
                            uint8_t *data, size_t len, uint16_t flags)
 {
     (void)flags;
@@ -61,8 +58,8 @@ static int _spi_read_bytes(common_bus_params_t *ptr,
     return COMMON_BUS_OK;
 }
 
-static int _spi_write_regs(common_bus_params_t *ptr, uint16_t reg,
-                           uint8_t *data, size_t len, uint16_t flags)
+static int _spi_write_regs(const common_bus_params_t *ptr, uint16_t reg,
+                           const uint8_t *data, size_t len, uint16_t flags)
 {
     (void)flags;
     uint8_t reg8 = reg;
@@ -74,20 +71,20 @@ static int _spi_write_regs(common_bus_params_t *ptr, uint16_t reg,
     return COMMON_BUS_OK;
 }
 
-static int _spi_write_bytes(common_bus_params_t *ptr,
-                            uint8_t *data, size_t len, uint16_t flags)
+static int _spi_write_bytes(const common_bus_params_t *ptr,
+                            const uint8_t *data, size_t len, uint16_t flags)
 {
     (void)flags;
     spi_transfer_bytes(ptr->spi.dev, ptr->spi.cs, false, data, NULL, len);
     return COMMON_BUS_OK;
 }
 
-static int _spi_acquire(common_bus_params_t *ptr)
+static int _spi_acquire(const common_bus_params_t *ptr)
 {
     return spi_acquire(ptr->spi.dev, ptr->spi.cs, ptr->spi.mode, ptr->spi.clk);
 }
 
-static void _spi_release(common_bus_params_t *ptr)
+static void _spi_release(const common_bus_params_t *ptr)
 {
     spi_release(ptr->spi.dev);
 }
@@ -132,6 +129,115 @@ int common_bus_spi_init(size_t dev_num, int8_t cs_port, uint8_t cs_pin,
 
 #endif
 
+#ifdef MODULE_SOFT_SPI
+
+#include <periph/gpio.h>
+
+static inline void _soft_spi_check_handle(int bus_handle)
+{
+    assert(bus_handle >= (int)COMMON_BUS_SOFT_SPI_DEV_OFFSET &&
+           bus_handle < (int)(COMMON_BUS_SOFT_SPI_DEV_OFFSET + SOFT_SPI_NUMOF));
+}
+
+static int _soft_spi_read_regs(const common_bus_params_t *ptr, uint16_t reg,
+                               uint8_t *data, size_t len, uint16_t flags)
+{
+    (void)flags;
+    uint8_t reg8 = COMMON_BUS_SPI_FLAG_READ | reg;
+    if (len > 1) {
+        reg8 |= COMMON_BUS_SPI_FLAG_AINC;
+    }
+    soft_spi_transfer_bytes(ptr->soft_spi.dev, ptr->soft_spi.cs,
+                            true, &reg8, NULL, 1);
+    soft_spi_transfer_bytes(ptr->soft_spi.dev, ptr->soft_spi.cs,
+                            false, NULL, data, len);
+    return COMMON_BUS_OK;
+}
+
+static int _soft_spi_read_bytes(const common_bus_params_t *ptr,
+                                uint8_t *data, size_t len, uint16_t flags)
+{
+    (void)flags;
+    soft_spi_transfer_bytes(ptr->soft_spi.dev, ptr->soft_spi.cs,
+                            false, NULL, data, len);
+    return COMMON_BUS_OK;
+}
+
+static int _soft_spi_write_regs(const common_bus_params_t *ptr, uint16_t reg,
+                                const uint8_t *data, size_t len, uint16_t flags)
+{
+    (void)flags;
+    uint8_t reg8 = reg;
+    if (len > 1) {
+        reg8 |= COMMON_BUS_SPI_FLAG_AINC;
+    }
+    soft_spi_transfer_bytes(ptr->soft_spi.dev, ptr->soft_spi.cs,
+                            true, &reg8, NULL, 1);
+    soft_spi_transfer_bytes(ptr->soft_spi.dev, ptr->soft_spi.cs,
+                            false, data, NULL, len);
+    return COMMON_BUS_OK;
+}
+
+static int _soft_spi_write_bytes(const common_bus_params_t *ptr,
+                                 const uint8_t *data, size_t len, uint16_t flags)
+{
+    (void)flags;
+    spi_transfer_bytes(ptr->soft_spi.dev, ptr->soft_spi.cs,
+                       false, data, NULL, len);
+    return COMMON_BUS_OK;
+}
+
+static int _soft_spi_acquire(const common_bus_params_t *ptr)
+{
+    return soft_spi_acquire(ptr->soft_spi.dev, ptr->soft_spi.cs,
+                            ptr->soft_spi.mode, ptr->soft_spi.clk);
+}
+
+static void _soft_spi_release(const common_bus_params_t *ptr)
+{
+    spi_release(ptr->soft_spi.dev);
+}
+
+int common_bus_soft_spi_init(size_t dev_num, int8_t cs_port, uint8_t cs_pin,
+                             soft_spi_mode_t mode, soft_spi_clk_t clk)
+{
+    const int bus_handle = COMMON_BUS_SPI_DEV_OFFSET + dev_num;
+    DEBUG("[common_bus] spi_init dev_num=%d bus_handle=%d\n", dev_num, bus_handle);
+    assert(dev_num < SPI_NUMOF);
+
+    common_bus_soft_spi_t *ctx = &_common_bus_setups[bus_handle].bus.soft_spi;
+    ctx->cs_port = cs_port;
+    ctx->cs_pin = cs_pin;
+    ctx->mode = mode;
+    ctx->clk = clk;
+
+    soft_spi_init(ctx->dev);
+    if (cs_port == -1) {
+        DEBUG("[common_bus] init using hardware chip select\n");
+        ctx->cs = SPI_HWCS(ctx->cs_pin);
+    }
+    else {
+        DEBUG("[common_bus] init using chip select port=%d pin=%d\n",
+              ctx->cs_port, ctx->cs_pin);
+        ctx->cs = GPIO_PIN(ctx->cs_port, ctx->cs_pin);
+    }
+
+    int ret = soft_spi_init_cs(ctx->dev, ctx->cs);
+
+#if (ENABLE_DEBUG != 0)
+    if (ret == SPI_OK) {
+        ret = soft_spi_acquire(ctx->dev, ctx->cs, ctx->mode, ctx->clk);
+        if (ret == SPI_OK) {
+            soft_spi_release(ctx->dev);
+            return bus_handle;
+        }
+    }
+#endif
+    return ret;
+}
+
+#endif
+
 #ifdef MODULE_PERIPH_I2C
 
 static inline void _i2c_check_handle(int bus_handle)
@@ -140,7 +246,7 @@ static inline void _i2c_check_handle(int bus_handle)
            bus_handle < (int)(COMMON_BUS_I2C_DEV_OFFSET + I2C_NUMOF));
 }
 
-static int _i2c_read_regs(common_bus_params_t *ptr, uint16_t reg,
+static int _i2c_read_regs(const common_bus_params_t *ptr, uint16_t reg,
                           uint8_t *data, size_t len, uint16_t flags)
 {
     if (flags & (I2C_NOSTOP | I2C_NOSTART)) {
@@ -172,14 +278,14 @@ static int _i2c_read_regs(common_bus_params_t *ptr, uint16_t reg,
     return ret;
 }
 
-static int _i2c_read_bytes(common_bus_params_t *ptr,
+static int _i2c_read_bytes(const common_bus_params_t *ptr,
                            uint8_t *data, size_t len, uint16_t flags)
 {
     return i2c_read_bytes(ptr->i2c.dev, ptr->i2c.addr, data, len, flags);
 }
 
-static int _i2c_write_regs(common_bus_params_t *ptr, uint16_t reg,
-                           uint8_t *data, size_t len, uint16_t flags)
+static int _i2c_write_regs(const common_bus_params_t *ptr, uint16_t reg,
+                           const uint8_t *data, size_t len, uint16_t flags)
 {
     if (len > 1) {
         reg |= COMMON_BUS_I2C_FLAG_AINC;
@@ -187,18 +293,18 @@ static int _i2c_write_regs(common_bus_params_t *ptr, uint16_t reg,
     return i2c_write_regs(ptr->i2c.dev, ptr->i2c.addr, reg, data, len, flags);
 }
 
-static int _i2c_write_bytes(common_bus_params_t *ptr,
-                            uint8_t *data, size_t len, uint16_t flags)
+static int _i2c_write_bytes(const common_bus_params_t *ptr,
+                            const uint8_t *data, size_t len, uint16_t flags)
 {
     return i2c_write_bytes(ptr->i2c.dev, ptr->i2c.addr, data, len, flags);
 }
 
-static int _i2c_acquire(common_bus_params_t *ptr)
+static int _i2c_acquire(const common_bus_params_t *ptr)
 {
     return i2c_acquire(ptr->i2c.dev);
 }
 
-static void _i2c_release(common_bus_params_t *ptr)
+static void _i2c_release(const common_bus_params_t *ptr)
 {
     i2c_release(ptr->i2c.dev);
 }
@@ -264,6 +370,22 @@ void common_bus_init(void)
         ctx->f.write_bytes = _spi_write_bytes;
         ctx->f.acquire = _spi_acquire;
         ctx->f.release = _spi_release;
+    }
+    for (size_t i=0; i<SOFT_SPI_NUMOF; i++) {
+        common_bus_context_t *ctx = &_common_bus_setups[COMMON_BUS_SOFT_SPI_DEV_OFFSET+i];
+        ctx->bus.soft_spi.dev = SOFT_SPI_DEV(i);
+        ctx->bus.soft_spi.cs_port = 0;
+        ctx->bus.soft_spi.cs_pin = 0;
+        ctx->bus.soft_spi.mode = 0;
+        ctx->bus.soft_spi.clk = 0;
+        ctx->type = COMMON_BUS_SOFT_SPI;
+        ctx->f.check_handle = _soft_spi_check_handle;
+        ctx->f.read_regs = _soft_spi_read_regs;
+        ctx->f.read_bytes = _soft_spi_read_bytes;
+        ctx->f.write_regs = _soft_spi_write_regs;
+        ctx->f.write_bytes = _soft_spi_write_bytes;
+        ctx->f.acquire = _soft_spi_acquire;
+        ctx->f.release = _soft_spi_release;
     }
 }
 
@@ -349,6 +471,31 @@ spi_mode_t common_bus_get_spi_mode(int bus_handle)
 spi_clk_t common_bus_get_spi_clk(int bus_handle)
 {
     return _get_context_ptr(bus_handle)->bus.spi.clk;
+}
+
+soft_spi_t common_bus_get_soft_spi_dev(int bus_handle)
+{
+    return _get_context_ptr(bus_handle)->bus.soft_spi.dev;
+}
+
+int8_t common_bus_get_soft_spi_cs_port(int bus_handle)
+{
+    return _get_context_ptr(bus_handle)->bus.soft_spi.cs_port;
+}
+
+uint8_t common_bus_get_soft_spi_cs_pin(int bus_handle)
+{
+    return _get_context_ptr(bus_handle)->bus.soft_spi.cs_pin;
+}
+
+soft_spi_mode_t common_bus_get_soft_spi_mode(int bus_handle)
+{
+    return _get_context_ptr(bus_handle)->bus.soft_spi.mode;
+}
+
+soft_spi_clk_t common_bus_get_soft_spi_clk(int bus_handle)
+{
+    return _get_context_ptr(bus_handle)->bus.soft_spi.clk;
 }
 
 i2c_t common_bus_get_i2c_dev(int bus_handle)
