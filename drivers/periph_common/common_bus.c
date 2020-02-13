@@ -23,6 +23,8 @@
 #define COMMON_BUS_SPI_FLAG_AINC  (0x40)
 #define COMMON_BUS_I2C_FLAG_AINC  (0x80)
 
+static bool _initialized = false;
+
 #if defined MODULE_PERIPH_SPI || defined MODULE_PERIPH_I2C || defined MODULE_SOFT_SPI
 static common_bus_context_t _common_bus_setups[COMMON_BUS_DEV_NUMOF];
 #endif
@@ -30,12 +32,6 @@ static common_bus_context_t _common_bus_setups[COMMON_BUS_DEV_NUMOF];
 #ifdef MODULE_PERIPH_SPI
 
 #include <periph/gpio.h>
-
-static inline void _spi_check_handle(int bus_handle)
-{
-    assert(bus_handle >= (int)COMMON_BUS_SPI_DEV_OFFSET &&
-           bus_handle < (int)(COMMON_BUS_SPI_DEV_OFFSET + SPI_NUMOF));
-}
 
 static int _spi_read_regs(const common_bus_params_t *ptr, uint16_t reg,
                           uint8_t *data, size_t len, uint16_t flags)
@@ -132,12 +128,6 @@ int common_bus_spi_init(size_t dev_num, int8_t cs_port, uint8_t cs_pin,
 #ifdef MODULE_SOFT_SPI
 
 #include <periph/gpio.h>
-
-static inline void _soft_spi_check_handle(int bus_handle)
-{
-    assert(bus_handle >= (int)COMMON_BUS_SOFT_SPI_DEV_OFFSET &&
-           bus_handle < (int)(COMMON_BUS_SOFT_SPI_DEV_OFFSET + SOFT_SPI_NUMOF));
-}
 
 static int _soft_spi_read_regs(const common_bus_params_t *ptr, uint16_t reg,
                                uint8_t *data, size_t len, uint16_t flags)
@@ -240,12 +230,6 @@ int common_bus_soft_spi_init(size_t dev_num, int8_t cs_port, uint8_t cs_pin,
 
 #ifdef MODULE_PERIPH_I2C
 
-static inline void _i2c_check_handle(int bus_handle)
-{
-    assert(bus_handle >= (int)COMMON_BUS_I2C_DEV_OFFSET &&
-           bus_handle < (int)(COMMON_BUS_I2C_DEV_OFFSET + I2C_NUMOF));
-}
-
 static int _i2c_read_regs(const common_bus_params_t *ptr, uint16_t reg,
                           uint8_t *data, size_t len, uint16_t flags)
 {
@@ -334,9 +318,9 @@ int common_bus_i2c_init(size_t dev_num, int8_t addr)
 
 static common_bus_context_t *_get_context_ptr(int bus_handle)
 {
-    assert(bus_handle < (int)COMMON_BUS_DEV_NUMOF);
+    assert(_initialized && bus_handle < (int)COMMON_BUS_DEV_NUMOF);
     common_bus_context_t *ctx = &_common_bus_setups[bus_handle];
-    ctx->f.check_handle(bus_handle);
+    assert(ctx);
     return ctx;
 }
 
@@ -347,7 +331,6 @@ void common_bus_init(void)
         ctx->bus.i2c.dev = I2C_DEV(i);
         ctx->bus.i2c.addr = 0x00;
         ctx->type = COMMON_BUS_I2C;
-        ctx->f.check_handle = _i2c_check_handle;
         ctx->f.read_regs = _i2c_read_regs;
         ctx->f.read_bytes = _i2c_read_bytes;
         ctx->f.write_regs = _i2c_write_regs;
@@ -363,7 +346,6 @@ void common_bus_init(void)
         ctx->bus.spi.mode = 0;
         ctx->bus.spi.clk = 0;
         ctx->type = COMMON_BUS_SPI;
-        ctx->f.check_handle = _spi_check_handle;
         ctx->f.read_regs = _spi_read_regs;
         ctx->f.read_bytes = _spi_read_bytes;
         ctx->f.write_regs = _spi_write_regs;
@@ -379,7 +361,6 @@ void common_bus_init(void)
         ctx->bus.soft_spi.mode = 0;
         ctx->bus.soft_spi.clk = 0;
         ctx->type = COMMON_BUS_SOFT_SPI;
-        ctx->f.check_handle = _soft_spi_check_handle;
         ctx->f.read_regs = _soft_spi_read_regs;
         ctx->f.read_bytes = _soft_spi_read_bytes;
         ctx->f.write_regs = _soft_spi_write_regs;
@@ -387,6 +368,7 @@ void common_bus_init(void)
         ctx->f.acquire = _soft_spi_acquire;
         ctx->f.release = _soft_spi_release;
     }
+    _initialized = true;
 }
 
 int common_bus_read_regs(int bus_handle, uint16_t reg,

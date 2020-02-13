@@ -123,15 +123,8 @@ typedef union
 #ifdef MODULE_SOFT_SPI
     common_bus_soft_spi_t soft_spi; /**< Soft SPI parameters */
 #endif
-    unsigned int dummy;             /**< A place holder */
+    unsigned int dummy;             /**< Allow compilation, when no peripherals were enabled. */
 } common_bus_params_t;
-
-/**
- * @brief   Common bus check handle function typedef
- *
- * @param[in] bus_handle   bus handle
- */
-    typedef void common_bus_check_handle_t(int bus_handle);
 
 /**
  * @brief   Common bus read regs function typedef
@@ -197,7 +190,6 @@ typedef void common_bus_release_t(const common_bus_params_t *ptr);
  * @brief   Function pointer structure for pivoting to a specified bus.
  */
 typedef struct {
-    common_bus_check_handle_t *check_handle; /**< check handle funtion pointer */
     common_bus_read_regs_t    *read_regs;    /**< read registers funtion pointer */
     common_bus_write_regs_t   *write_regs;   /**< write registers funtion pointer */
     common_bus_read_bytes_t   *read_bytes;   /**< read bytes funtion pointer */
