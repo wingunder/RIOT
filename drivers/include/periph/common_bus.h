@@ -204,6 +204,7 @@ typedef struct {
  */
 typedef struct
 {
+    bool initialized;       /**< A flag for checking initialization status */
     common_bus_type_t type;  /**< The transport type */
     common_bus_params_t bus; /**< The bus parameters */
     common_bus_function_t f; /**< The function pointers */

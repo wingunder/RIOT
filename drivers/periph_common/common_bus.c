@@ -90,7 +90,7 @@ int common_bus_spi_init(size_t dev_num, int8_t cs_port, uint8_t cs_pin,
 {
     const int bus_handle = COMMON_BUS_SPI_DEV_OFFSET + dev_num;
     DEBUG("[common_bus] spi_init dev_num=%d bus_handle=%d\n", dev_num, bus_handle);
-    assert(dev_num < SPI_NUMOF);
+    assert(dev_num < SPI_NUMOF && _initialized);
 
     common_bus_spi_t *ctx = &_common_bus_setups[bus_handle].bus.spi;
     ctx->cs_port = cs_port;
@@ -98,7 +98,6 @@ int common_bus_spi_init(size_t dev_num, int8_t cs_port, uint8_t cs_pin,
     ctx->mode = mode;
     ctx->clk = clk;
 
-    spi_init(ctx->dev);
     if (cs_port == -1) {
         DEBUG("[common_bus] init using hardware chip select\n");
         ctx->cs = SPI_HWCS(ctx->cs_pin);
@@ -110,6 +109,9 @@ int common_bus_spi_init(size_t dev_num, int8_t cs_port, uint8_t cs_pin,
     }
 
     int ret = spi_init_cs(ctx->dev, ctx->cs);
+    if (ret == SPI_OK) {
+        _common_bus_setups[bus_handle].initialized = true;
+    }
 
 #if (ENABLE_DEBUG != 0)
     if (ret == SPI_OK) {
@@ -193,7 +195,7 @@ int common_bus_soft_spi_init(size_t dev_num, int8_t cs_port, uint8_t cs_pin,
 {
     const int bus_handle = COMMON_BUS_SPI_DEV_OFFSET + dev_num;
     DEBUG("[common_bus] spi_init dev_num=%d bus_handle=%d\n", dev_num, bus_handle);
-    assert(dev_num < SPI_NUMOF);
+    assert(dev_num < SOFT_SPI_NUMOF && _initialized);
 
     common_bus_soft_spi_t *ctx = &_common_bus_setups[bus_handle].bus.soft_spi;
     ctx->cs_port = cs_port;
@@ -201,7 +203,6 @@ int common_bus_soft_spi_init(size_t dev_num, int8_t cs_port, uint8_t cs_pin,
     ctx->mode = mode;
     ctx->clk = clk;
 
-    soft_spi_init(ctx->dev);
     if (cs_port == -1) {
         DEBUG("[common_bus] init using hardware chip select\n");
         ctx->cs = SPI_HWCS(ctx->cs_pin);
@@ -213,6 +214,9 @@ int common_bus_soft_spi_init(size_t dev_num, int8_t cs_port, uint8_t cs_pin,
     }
 
     int ret = soft_spi_init_cs(ctx->dev, ctx->cs);
+    if (ret == SOFT_SPI_OK) {
+        _common_bus_setups[bus_handle].initialized = true;
+    }
 
 #if (ENABLE_DEBUG != 0)
     if (ret == SPI_OK) {
@@ -297,12 +301,13 @@ int common_bus_i2c_init(size_t dev_num, int8_t addr)
 {
     const int bus_handle = COMMON_BUS_I2C_DEV_OFFSET + dev_num;
     DEBUG("[common_bus] i2c_init dev_num=%d bus_handle=%d\n", dev_num, bus_handle);
-    assert(dev_num < I2C_NUMOF);
+    assert(dev_num < I2C_NUMOF && _initialized);
 
     common_bus_i2c_t *ctx = &_common_bus_setups[bus_handle].bus.i2c;
     ctx->dev = I2C_DEV(dev_num);
     ctx->addr = addr;
 
+    _common_bus_setups[bus_handle].initialized = true;
     int ret = 0;
 #if (ENABLE_DEBUG != 0)
     ret = i2c_acquire(ctx->dev);
@@ -316,18 +321,20 @@ int common_bus_i2c_init(size_t dev_num, int8_t addr)
 
 #endif
 
-static common_bus_context_t *_get_context_ptr(int bus_handle)
+static const common_bus_context_t *_get_context_ptr(int bus_handle)
 {
-    assert(_initialized && bus_handle < (int)COMMON_BUS_DEV_NUMOF);
-    common_bus_context_t *ctx = &_common_bus_setups[bus_handle];
-    assert(ctx);
+    assert(_initialized && bus_handle >= 0 && bus_handle < (int)COMMON_BUS_DEV_NUMOF);
+    const common_bus_context_t *ctx = &_common_bus_setups[bus_handle];
+    assert(ctx && ctx->initialized);
     return ctx;
 }
 
 void common_bus_init(void)
 {
     for (size_t i=0; i<I2C_NUMOF; i++) {
+        i2c_init(i);
         common_bus_context_t *ctx = &_common_bus_setups[COMMON_BUS_I2C_DEV_OFFSET+i];
+        ctx->initialized = false;
         ctx->bus.i2c.dev = I2C_DEV(i);
         ctx->bus.i2c.addr = 0x00;
         ctx->type = COMMON_BUS_I2C;
@@ -339,7 +346,9 @@ void common_bus_init(void)
         ctx->f.release = _i2c_release;
     }
     for (size_t i=0; i<SPI_NUMOF; i++) {
+        spi_init(i);
         common_bus_context_t *ctx = &_common_bus_setups[COMMON_BUS_SPI_DEV_OFFSET+i];
+        ctx->initialized = false;
         ctx->bus.spi.dev = SPI_DEV(i);
         ctx->bus.spi.cs_port = 0;
         ctx->bus.spi.cs_pin = 0;
@@ -354,7 +363,9 @@ void common_bus_init(void)
         ctx->f.release = _spi_release;
     }
     for (size_t i=0; i<SOFT_SPI_NUMOF; i++) {
+        soft_spi_init(i);
         common_bus_context_t *ctx = &_common_bus_setups[COMMON_BUS_SOFT_SPI_DEV_OFFSET+i];
+        ctx->initialized = false;
         ctx->bus.soft_spi.dev = SOFT_SPI_DEV(i);
         ctx->bus.soft_spi.cs_port = 0;
         ctx->bus.soft_spi.cs_pin = 0;
@@ -375,7 +386,7 @@ int common_bus_read_regs(int bus_handle, uint16_t reg,
                          uint8_t *data, size_t len, uint16_t flags)
 {
     DEBUG("[common_bus] read_regs bus_handle=%d\n", bus_handle);
-    common_bus_context_t *ctx = _get_context_ptr(bus_handle);
+    const common_bus_context_t *ctx = _get_context_ptr(bus_handle);
     int ret = ctx->f.acquire(&ctx->bus);
     if (ret == 0) {
         ret = ctx->f.read_regs(&ctx->bus, reg, data, len, flags);
@@ -388,7 +399,7 @@ int common_bus_read_bytes(int bus_handle,
                           uint8_t *data, size_t len, uint16_t flags)
 {
     DEBUG("[common_bus] add_read_bytes bus_handle=%d\n", bus_handle);
-    common_bus_context_t *ctx = _get_context_ptr(bus_handle);
+    const common_bus_context_t *ctx = _get_context_ptr(bus_handle);
     int ret = ctx->f.acquire(&ctx->bus);
     if (ret == 0) {
         ret = ctx->f.read_bytes(&ctx->bus, data, len, flags);
@@ -401,7 +412,7 @@ int common_bus_add_write_regs(int bus_handle, uint16_t reg,
                               uint8_t *data, size_t len, uint16_t flags)
 {
     DEBUG("[common_bus] add_write_regs bus_handle=%d\n", bus_handle);
-    common_bus_context_t *ctx = _get_context_ptr(bus_handle);
+    const common_bus_context_t *ctx = _get_context_ptr(bus_handle);
     int ret = ctx->f.acquire(&ctx->bus);
     if (ret == 0) {
         ret = ctx->f.write_regs(&ctx->bus, reg, data, len, flags);
@@ -414,7 +425,7 @@ int common_bus_add_write_bytes(int bus_handle,
                                uint8_t *data, size_t len, uint16_t flags)
 {
     DEBUG("[common_bus] add_write_bytes bus_handle=%d\n", bus_handle);
-    common_bus_context_t *ctx = _get_context_ptr(bus_handle);
+    const common_bus_context_t *ctx = _get_context_ptr(bus_handle);
     int ret = ctx->f.acquire(&ctx->bus);
     if (ret == 0) {
         ret = ctx->f.write_bytes(&ctx->bus, data, len, flags);
