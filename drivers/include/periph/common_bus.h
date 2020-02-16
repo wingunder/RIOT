@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2020 Pieter du Preez <pdupreez@gmail.com>
- *               2018 Freie Universität Berlin
+ * Copyright (C) 2014-2020 Freie Universität Berlin
  *
  * This file is subject to the terms and conditions of the GNU Lesser
  * General Public License v2.1. See the file LICENSE in the top level
@@ -8,21 +7,59 @@
  */
 
 /**
- * @defgroup    drivers_periph_common_bus (I2C/SPI)
+ * @defgroup    drivers_periph_common_bus COMMON_BUS
  * @ingroup     drivers_periph
- * @brief       Low-level I2C/SPI bus driver interface
+ * @brief       Low-level peripheral driver for I2C, SPI, and others.
  *
- * This is a kind of router for drivers that are able to support
- * either I2C or API bus interfaces.
+ * This interface provides a simple abstraction to use I2C, SPI and other
+ * peripherals in a common way. All known peripherals are initialized with
+ * a unique bus handle. The bus handle can then be used to perform
+ * read, write, acquire and release operations on the bus. Thes operations
+ * automatically get mapped to I2C, SPI, etc, operations by means of
+ * funcion pointers, which are completely transparent to the caller.
  *
- * It is required to call the common_bus_setup function as start-up.
- * This function sets up function pointers for directing bus
- * communication to the desired bus.
+ * The idea behind this the common_bus driver is to have a single, standard
+ * interface to I2C, SPI, and other peripherals. This reduces code needed to
+ * implement drivers for devices for devices that support more than one
+ * of I2C, SPI and other interfaces.
+ *
+ * @section   sec_common_bus_usage Usage
+ *
+ * The common_bus interface _must_ be initialized before any attempt
+ * is made to use it. This is done by calling the following function,
+ * which does an initial setup of all known interfaces.
+ *
+ * @code{c}
+ * common_bus_init();
+ * @endcode
+ *
+ * The next step is to initialize the required interfaces by calling
+ * the interface initialization functions, which will return the
+ * interface's bus handle.
+ *
+ * @code{c}
+ * // initialize the I2C_1 buses
+ * int i2c_1_handle = common_bus_i2c_init(1, 0x58);
+ * int i2c_2_handle = common_bus_i2c_init(2, 0x59);
+ * ...
+ * // initialize the SPI buses
+ * int spi_1_handle = common_bus_spi_init(1, PORT_B, 12, 0 3);
+ * int spi_2_handle = common_bus_spi_init(2, PORT_A, 5, 0 0);
+ * ...
+ * // initialize the SOFT_SPI buses
+ * int spi_1_handle = common_bus_spi_init(1, PORT_C, 8, 0 2);
+ * ...
+ * @endcode
+ *
+ * @section   sec_common_bus_pm (Low-) power support
+ *
+ * The common_bus interface supports i2c_acquire() and i2c_release() block
+ * transparently. Please refer to the underlying bus type (I2c, SPI, etc.)
+ * for usage and best practices.
  *
  * @{
- *
  * @file
- * @brief       Low-level I2C/SPI bus driver interface definition
+ * @brief       Low-level I2C peripheral driver interface definition
  *
  * @author      Pieter du Preez <pdupreez@gmail.com>
  */
@@ -46,14 +83,25 @@
 extern "C" {
 #endif
 
+#ifndef SOFT_SPI_NUMOF
+#if defined soft_spi_config || defined(DOXYGEN)
 /**
- * @brief   Maximum number of common bus devices
+ * @brief   Maximum number of SOFT_SPI interfaces.
+ */
+#define SOFT_SPI_NUMOF (ARRAY_SIZE(soft_spi_config))
+#else
+#define SOFT_SPI_NUMOF (0)
+#endif
+#endif
+
+/**
+ * @brief   Maximum number of common bus devices.
  */
 #define COMMON_BUS_DEV_NUMOF           (I2C_NUMOF + SPI_NUMOF + SOFT_SPI_NUMOF)
 /**
  * @brief   I2C device offset
  */
-#define COMMON_BUS_I2C_DEV_OFFSET      0
+#define COMMON_BUS_I2C_DEV_OFFSET      (0)
 /**
  * @brief   SPI device offset
  */
@@ -71,7 +119,7 @@ typedef enum {
 } common_bus_return_code_t;
 
 /**
- * @brief   Supported bus types.
+ * @brief   Supported common bus types.
  */
 typedef enum {
     COMMON_BUS_UNDEF = 0,   /**< Undefined bus type */
@@ -80,7 +128,10 @@ typedef enum {
     COMMON_BUS_SOFT_SPI,    /**< Soft SPI bus type */
 } common_bus_type_t;
 
-#ifdef MODULE_PERIPH_SPI
+#if defined MODULE_PERIPH_SPI || defined(DOXYGEN)
+/**
+ * @brief   Common bus SPI bus parameters.
+ */
 typedef struct  {
     spi_t dev;              /**< The device */
     gpio_t cs;              /**< Chip select */
@@ -91,7 +142,10 @@ typedef struct  {
 } common_bus_spi_t;
 #endif
 
-#ifdef MODULE_SOFT_SPI
+#if defined MODULE_SOFT_SPI || defined(DOXYGEN)
+/**
+ * @brief   Common bus SOFT_SPI bus parameters.
+ */
 typedef struct  {
     soft_spi_t dev;         /**< The device */
     gpio_t cs;              /**< Chip select */
@@ -102,7 +156,10 @@ typedef struct  {
 } common_bus_soft_spi_t;
 #endif
 
-#ifdef MODULE_PERIPH_I2C
+#if defined MODULE_PERIPH_I2C || defined(DOXYGEN)
+/**
+ * @brief   Common bus I2C bus parameters.
+ */
 typedef struct {
     i2c_t dev;              /**< The device */
     uint8_t addr;           /**< The address */
@@ -114,13 +171,13 @@ typedef struct {
  */
 typedef union
 {
-#ifdef MODULE_PERIPH_SPI
+#if defined MODULE_PERIPH_SPI  || defined(DOXYGEN)
     common_bus_spi_t spi;           /**< SPI parameters */
 #endif
-#ifdef MODULE_PERIPH_I2C
+#if defined MODULE_PERIPH_I2C || defined(DOXYGEN)
     common_bus_i2c_t i2c;           /**< I2C parameters */
 #endif
-#ifdef MODULE_SOFT_SPI
+#if defined MODULE_SOFT_SPI || defined(DOXYGEN)
     common_bus_soft_spi_t soft_spi; /**< Soft SPI parameters */
 #endif
     unsigned int dummy;             /**< Allow compilation, when no peripherals were enabled. */
@@ -204,7 +261,7 @@ typedef struct {
  */
 typedef struct
 {
-    bool initialized;       /**< A flag for checking initialization status */
+    bool initialized;        /**< A flag for checking initialization status */
     common_bus_type_t type;  /**< The transport type */
     common_bus_params_t bus; /**< The bus parameters */
     common_bus_function_t f; /**< The function pointers */
@@ -271,7 +328,7 @@ int common_bus_read_bytes(int bus_handle,
                           uint8_t *data, size_t len, uint16_t flags);
 
 /**
- * @brief   Add write registers command
+ * @brief   Write registers command
  * @param[in] bus_handle   bus handle
  * @param[in] reg          register
  * @param[in] data         data pointer
@@ -293,10 +350,10 @@ int common_bus_write_regs(int bus_handle, uint16_t reg,
 int common_bus_write_bytes(int bus_handle,
                            uint8_t *data, size_t len, uint16_t flags);
 
-#ifdef CONFIG_PERIPH_COMMON_DEBUG
+#if defined CONFIG_PERIPH_COMMON_DEBUG || defined(DOXYGEN)
 
 /**
- * @brief   Get type command
+ * @brief   Get common bus type command
  * @param[in] bus_handle   bus handle
  * @return                 common bus type
  */
@@ -304,7 +361,7 @@ common_bus_type_t common_bus_get_type(int bus_handle);
 
 /**
  * @brief   Get SPI device number
- * @param[in] dev_num      device number
+ * @param[in] bus_handle   bus handle
  * @return                 SPI device number
  */
 spi_t common_bus_get_spi_dev(int bus_handle);
@@ -312,45 +369,78 @@ spi_t common_bus_get_spi_dev(int bus_handle);
 /**
  * @brief   Get SPI device number
  * @param[in] bus_handle   bus handle
- * @return  SPI SPI chip select port
+ * @return                 SPI chip select port
  */
 int8_t common_bus_get_spi_cs_port(int bus_handle);
 
 /**
  * @brief   Get SPI device number
  * @param[in] bus_handle   bus handle
- * @return  SPI SPI chip select pin
+ * @return                 SPI chip select pin
  */
 uint8_t common_bus_get_spi_cs_pin(int bus_handle);
 
+/**
+ * @brief   Get SPI device number
+ * @param[in] bus_handle   bus handle
+ * @return                 SPI mode
+ */
 spi_mode_t common_bus_get_spi_mode(int bus_handle);
+
+/**
+ * @brief   Get SPI device number
+ * @param[in] bus_handle   bus handle
+ * @return                 SPI clock
+ */
 spi_clk_t common_bus_get_spi_clk(int bus_handle);
 
 /**
  * @brief   Get SOFT_SPI device number
  * @param[in] bus_handle   bus handle
- * @return  SOFT_SPI device number
+ * @return                 SOFT_SPI device number
  */
 soft_spi_t common_bus_get_soft_spi_dev(int bus_handle);
 
 /**
  * @brief   Get SOFT_SPI device number
  * @param[in] bus_handle   bus handle
- * @return  SOFT_SPI SOFT_SPI chip select port
+ * @return                 SOFT_SPI chip select port
  */
 int8_t common_bus_get_soft_spi_cs_port(int bus_handle);
 
 /**
  * @brief   Get SOFT_SPI device number
  * @param[in] bus_handle   bus handle
- * @return  SOFT_SPI SOFT_SPI chip select pin
+ * @return                 SOFT_SPI chip select pin
  */
 uint8_t common_bus_get_soft_spi_cs_pin(int bus_handle);
 
+/**
+ * @brief   Get SOFT_SPI device number
+ * @param[in] bus_handle   bus handle
+ * @return                 SOFT_SPI mode
+ */
 soft_spi_mode_t common_bus_get_soft_spi_mode(int bus_handle);
+
+/**
+ * @brief   Get SOFT_SPI device number
+ * @param[in] bus_handle   bus handle
+ * @return                 SOFT_SPI clock
+ */
 soft_spi_clk_t common_bus_get_soft_spi_clk(int bus_handle);
 
+/**
+ * @brief   Get I2C device number
+ * @param[in] bus_handle   bus handle
+ * @return                 I2C device number
+ */
 i2c_t common_bus_get_i2c_dev(int bus_handle);
+
+/**
+ * @brief   Get I2C address
+ * @param[in] bus_handle   bus handle
+ * @return                 I2C address
+ */
 uint8_t common_bus_get_i2c_addr(int bus_handle);
 
 #endif
